@@ -1,0 +1,9 @@
+[package]
+name = "uview"
+version = "0.1.0"
+authors = ["Andrea Jemmett <andreajemmett@gmail.com>"]
+
+[dependencies]
+pcap = "~0.5.7"
+clap = "~2.19.3"
+serial = "~0.3.4"
