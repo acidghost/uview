@@ -5,46 +5,70 @@ use std::fmt;
 pub trait Num: Add<Self, Output=Self> + AddAssign<Self> + Sub<Self, Output=Self> +
     Div<Self, Output=Self> + Mul<Self> + Copy {}
 
+#[derive(Debug)]
+pub enum DisplayMode {
+    Chart,
+    Font
+}
+
 pub struct UViewPacket<T: Num> {
-    value: T
+    value: T,
+    display_mode: DisplayMode
 }
 
 pub type ValueType = u64;
 
 impl Num for ValueType {}
+impl UViewPacket<ValueType> {
+    pub fn zero(&mut self) {
+        self.value = 0 as ValueType;
+    }
+}
 
 impl<T> UViewPacket<T> where T: Num {
-    pub fn new(x: T) -> UViewPacket<T> {
-        UViewPacket { value: x }
+    pub fn new(x: T, display_mode: DisplayMode) -> UViewPacket<T> {
+        UViewPacket { value: x, display_mode: display_mode }
     }
-    pub fn scale(self, min: T, max: T) -> UViewPacket<T> {
-        UViewPacket { value: (self.value - min) / (max - min) }
+}
+
+impl ToString for DisplayMode {
+    fn to_string(&self) -> String {
+        match self {
+            &DisplayMode::Chart => 0,
+            &DisplayMode::Font => 1
+        }.to_string()
     }
 }
 
 impl<T> ToString for UViewPacket<T> where T: Num + ToString {
     fn to_string(&self) -> String {
-        self.value.to_string()
+        format!("v{}m{}", self.value.to_string(), self.display_mode.to_string())
     }
 }
 
 impl<T> fmt::Debug for UViewPacket<T> where T: Num + fmt::Display {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Value: {:5}", self.value)
+        write!(f, "Value: {:5}\tMode: {:?}", self.value, self.display_mode)
     }
 }
 
 impl<T> Add<T> for UViewPacket<T> where T: Num {
     type Output = UViewPacket<T>;
     fn add(self, other: T) -> UViewPacket<T> {
-        UViewPacket { value: self.value + other }
+        UViewPacket {
+            value: self.value + other,
+            display_mode: self.display_mode
+        }
     }
 }
 
 impl<T> Add<UViewPacket<T>> for UViewPacket<T> where T: Num {
     type Output = UViewPacket<T>;
     fn add(self, other: UViewPacket<T>) -> UViewPacket<T> {
-        UViewPacket { value: self.value + other.value }
+        UViewPacket {
+            value: self.value + other.value,
+            display_mode: self.display_mode
+        }
     }
 }
 

@@ -1,4 +1,24 @@
+#include <assert.h>
 #include <MicroView.h>
+
+
+#define FONT5X7             0
+#define FONT8X16            1
+#define SEVENSEGMENT        2
+#define FONTLARGENUMBERS    3
+#define SPACE01             4
+#define SPACE02             5
+#define SPACE03             6
+
+typedef enum {
+  CHART = 0,
+  FONT
+} display_mode_t;
+
+typedef struct {
+  long value;
+  display_mode_t display_mode;
+} packet_t;
 
 
 const uint8_t XPAD = 2;
@@ -50,6 +70,39 @@ void displayValues(void)
 }
 
 
+void parseInput(String input, packet_t *packet)
+{
+  #define TMPSIZE 255
+  const char *str = input.c_str();
+  char tmp[TMPSIZE] = { 0 };
+
+  size_t i = 1, j = 0;
+  assert(str[0] == 'v');
+  while (j < TMPSIZE && str[i] != 'm') {
+    tmp[j] = str[i];
+    i++;
+    j++;
+  }
+  tmp[j] = '\0';
+  packet->value = atol(tmp);
+
+  // could be removed...
+  assert(str[i] == 'm');
+
+  switch (str[i+1]) {
+  case '0':
+    packet->display_mode = CHART;
+    break;
+  case '1':
+    packet->display_mode = FONT;
+    break;
+  default:
+    packet->display_mode = CHART;
+  }
+  #undef TMPSIZE
+}
+
+
 void setup(void)
 {
   Serial.begin(115200);
@@ -57,22 +110,31 @@ void setup(void)
   memset(values, 0, sizeof(values));
   currentx = 0;
 
-	uView.begin();
-	displayClear();
+  uView.begin();
+  uView.setFontType(FONTLARGENUMBERS);
+  displayClear();
 }
 
 
 void loop(void)
 {
-  while (!Serial.available());
-
-  long x = Serial.parseInt(SKIP_ALL);
+  packet_t packet;
+  parseInput(Serial.readStringUntil('\n'), &packet);
+  values[currentx] = constrain(packet.value, 0, LCDHEIGHT - (YPAD * 2));
 
   displayClear();
-  drawChartAxes();
+  switch (packet.display_mode) {
+  case FONT:
+    char tmp[64];
+    ltoa(packet.value, tmp, 10);
+    displayStr(0, 0, tmp);
+    break;
+  case CHART:
+  default:
+    drawChartAxes();
+    displayValues();
+  }
 
-  values[currentx] = constrain(x, 0, LCDHEIGHT - (YPAD * 2));
-  displayValues();
   delay(60);
 
   currentx = constrain(currentx + 1, 0, LCDWIDTH - 1);
