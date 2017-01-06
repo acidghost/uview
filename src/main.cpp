@@ -1,6 +1,7 @@
-#include <assert.h>
 #include <MicroView.h>
 
+
+#define TMPSIZE             255
 
 #define FONT5X7             0
 #define FONT8X16            1
@@ -72,34 +73,29 @@ void displayValues(void)
 
 void parseInput(String input, packet_t *packet)
 {
-    #define TMPSIZE 255
     const char *str = input.c_str();
     char tmp[TMPSIZE] = { 0 };
 
-    size_t i = 1, j = 0;
-    assert(str[0] == 'v');
-    while (j < TMPSIZE && str[i] != 'm') {
-        tmp[j] = str[i];
-        i++;
-        j++;
+    if (str[0] != 'v') {
+        packet->value = 0;
+        packet->display_mode = FONT;
+        return;
     }
+
+    size_t i, j;
+    for (i = 1, j = 0; j < TMPSIZE && str[i] != 'm'; i++, j++)
+        tmp[j] = str[i];
     tmp[j] = '\0';
     packet->value = atol(tmp);
 
-    // could be removed...
-    assert(str[i] == 'm');
-
     switch (str[i+1]) {
-        case '0':
-        packet->display_mode = CHART;
-        break;
-        case '1':
+    case '1':
         packet->display_mode = FONT;
         break;
-        default:
+    case '0':
+    default:
         packet->display_mode = CHART;
     }
-    #undef TMPSIZE
 }
 
 
@@ -125,7 +121,7 @@ void loop(void)
     displayClear();
     switch (packet.display_mode) {
     case FONT:
-        char tmp[64];
+        char tmp[TMPSIZE];
         ltoa(packet.value, tmp, 10);
         displayStr(0, 0, tmp);
         break;
