@@ -11,27 +11,39 @@ use serial::prelude::*;
 use serial::PortSettings;
 
 use std::time::SystemTime;
+use std::thread;
+use std::sync::mpsc;
 
 
 
-fn network_bandwidth(interval: ValueType, port: &mut SerialPort, bpf: Option<&str>, max_bandwidth: ValueType) {
+fn network_bandwidth(tx: mpsc::Sender<UViewPacket<ValueType>>, bpf: Option<String>, max_bandwidth: ValueType) {
     let mut cap = Device::lookup().unwrap().open().unwrap();
-    let mut timer = SystemTime::now();
-    let mut bytes = UViewPacket::new();
 
     if let Some(filter) = bpf {
-        cap.filter(filter).unwrap();
+        cap.filter(filter.as_str()).unwrap();
     }
 
     while let Ok(packet) = cap.next() {
-        bytes += packet.header.caplen as ValueType;
+        let bytes = UViewPacket::new(packet.header.caplen as ValueType).scale(0, max_bandwidth);
+        tx.send(bytes).unwrap();
+    }
+}
+
+
+fn uview_sender(rx: mpsc::Receiver<UViewPacket<ValueType>>, serial_port: &mut SerialPort, interval: u64) {
+    let mut timer = SystemTime::now();
+    let mut accumulator = UViewPacket::new(0 as ValueType);
+    loop {
+        accumulator += match rx.try_recv() {
+            Ok(val) => val,
+            Err(_) => UViewPacket::new(0 as ValueType)
+        };
         if let Ok(duration) = SystemTime::now().duration_since(timer) {
             if duration.as_secs() >= interval {
+                println!("{:?}", accumulator);
+                serial_port.write(accumulator.to_string().as_bytes()).unwrap();
+                accumulator = UViewPacket::new(0 as ValueType);
                 timer = SystemTime::now();
-                let scaled = bytes.scale(0, max_bandwidth);
-                println!("{:?}", scaled);
-                port.write(scaled.to_string().as_bytes()).unwrap();
-                bytes = UViewPacket::new();
             }
         }
     }
@@ -63,11 +75,15 @@ fn main() {
     serial_settings.set_baud_rate(serial::Baud115200).unwrap();
     serial_port.configure(&mut serial_settings).unwrap();
 
+    let (tx, rx) = mpsc::channel();
+    let do_sender = || { uview_sender(rx, &mut serial_port, interval) };
+
     if let Some(network_matches) = matches.subcommand_matches("network") {
-        let bpf = network_matches.value_of("filter");
+        let bpf = network_matches.value_of("filter").map(|f| f.to_string());
         if let Some(bandwidth_matches) = network_matches.subcommand_matches("bandwidth") {
             let max_bandwidth = bandwidth_matches.value_of("max").unwrap().parse().unwrap();
-            network_bandwidth(interval, &mut serial_port, bpf, max_bandwidth);
+            thread::spawn(move || network_bandwidth(tx, bpf, max_bandwidth));
+            do_sender();
         }
     }
 

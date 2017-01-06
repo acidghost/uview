@@ -12,13 +12,11 @@ pub struct UViewPacket<T: Num> {
 pub type ValueType = u64;
 
 impl Num for ValueType {}
-impl UViewPacket<ValueType> {
-    pub fn new() -> UViewPacket<ValueType> {
-        UViewPacket { value: 0 as ValueType }
-    }
-}
 
 impl<T> UViewPacket<T> where T: Num {
+    pub fn new(x: T) -> UViewPacket<T> {
+        UViewPacket { value: x }
+    }
     pub fn scale(self, min: T, max: T) -> UViewPacket<T> {
         UViewPacket { value: (self.value - min) / (max - min) }
     }
@@ -43,8 +41,21 @@ impl<T> Add<T> for UViewPacket<T> where T: Num {
     }
 }
 
+impl<T> Add<UViewPacket<T>> for UViewPacket<T> where T: Num {
+    type Output = UViewPacket<T>;
+    fn add(self, other: UViewPacket<T>) -> UViewPacket<T> {
+        UViewPacket { value: self.value + other.value }
+    }
+}
+
 impl<T> AddAssign<T> for UViewPacket<T> where T: Num {
     fn add_assign(&mut self, other: T) {
         self.value += other;
+    }
+}
+
+impl<T> AddAssign<UViewPacket<T>> for UViewPacket<T> where T: Num {
+    fn add_assign(&mut self, other: UViewPacket<T>) {
+        self.value += other.value;
     }
 }
