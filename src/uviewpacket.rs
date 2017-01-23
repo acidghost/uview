@@ -5,7 +5,7 @@ use std::fmt;
 pub trait Num: Add<Self, Output=Self> + AddAssign<Self> + Sub<Self, Output=Self> +
     Div<Self, Output=Self> + Mul<Self> + Copy {}
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DisplayMode {
     Chart,
     Font
@@ -18,10 +18,20 @@ pub struct UViewPacket<T: Num> {
 
 pub type ValueType = u64;
 
+
+#[inline]
+pub fn scale<T: Num>(value: T, min: T, max: T) -> T {
+    (value - min) / (max - min)
+}
+
+
 impl Num for ValueType {}
 impl UViewPacket<ValueType> {
     pub fn zero(&mut self) {
         self.value = 0 as ValueType;
+    }
+    pub fn scale(&mut self, min: ValueType, max: ValueType) {
+        self.value = scale(self.value, min, max);
     }
 }
 

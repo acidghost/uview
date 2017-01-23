@@ -3,22 +3,51 @@ extern crate clap;
 extern crate serial;
 
 mod uviewpacket;
-use uviewpacket::{UViewPacket, ValueType, DisplayMode, Num};
+use uviewpacket::{UViewPacket, ValueType, DisplayMode, scale};
 
 use pcap::Device;
 use clap::{App, SubCommand};
 use serial::prelude::*;
 use serial::PortSettings;
 
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 use std::thread;
 use std::sync::mpsc;
 
 
 
-#[inline]
-fn scale<T: Num>(value: T, min: T, max: T) -> T {
-    (value - min) / (max - min)
+#[repr(C)]
+struct MemInfo {
+    pub total: u64,
+    pub free: u64,
+    pub buffers: u64,
+    pub cached: u64,
+    pub swap_total: u64,
+    pub swap_free: u64
+}
+
+
+extern "C" {
+    fn get_mem_info() -> MemInfo;
+}
+
+
+
+fn memory_free(tx: mpsc::Sender<ValueType>, interval: u64, percentage: bool) {
+    loop {
+        tx.send(unsafe {
+            let mi = get_mem_info();
+            if percentage {
+                let free = mi.free as f64;
+                let total = mi.total as f64;
+                ((free / total) * 100_f64) as ValueType
+            } else {
+                // return it in MB
+                mi.free / 1024 / 1024
+            }
+        }).unwrap();
+        thread::sleep(Duration::new(interval, 0));
+    }
 }
 
 
@@ -49,6 +78,9 @@ fn uview_sender(rx: mpsc::Receiver<ValueType>, serial_port: &mut SerialPort,
         if let Ok(duration) = SystemTime::now().duration_since(timer) {
             if duration.as_secs() >= interval {
                 println!("{:?}", accumulator);
+                if let DisplayMode::Chart = display_mode {
+                    accumulator.scale(0, 64);
+                }
                 serial_port.write((accumulator.to_string() + "\n").as_bytes()).unwrap();
                 accumulator.zero();
                 timer = SystemTime::now();
@@ -67,13 +99,18 @@ fn main() {
             .args_from_usage(
                 "[interval] -i, --interval=[interval] 'Interval of time between updates'
                  <port> -p, --port=[port] 'MicroView serial port'
-                 [mode-font] -f, --font 'Display in font mode'")
+                 [mode-font] -f, --font 'Display in font mode'
+                 [percentage] -x, --percentage 'Display percentages'")
             .subcommand(SubCommand::with_name("network")
                 .about("Network monitoring")
                 .args_from_usage("[filter] -f, --filter=[filter] 'Berkeley Packet Filter to use'")
                 .subcommand(SubCommand::with_name("bandwidth")
                     .about("Network bandwidth monitoring")
                     .args_from_usage("<max> -m, --max=[max] 'Max bandwidth'")))
+            .subcommand(SubCommand::with_name("memory")
+                .about("Memory monitoring")
+                .subcommand(SubCommand::with_name("free")
+                    .about("Free RAM monitoring")))
             .get_matches();
 
     let interval: u64 = matches.value_of("interval").unwrap_or("1").parse().unwrap();
@@ -83,6 +120,7 @@ fn main() {
     } else {
         DisplayMode::Chart
     };
+    let percentage = matches.is_present("percentage");
 
     let mut serial_port = serial::open(port).unwrap();
     let mut serial_settings = PortSettings::default();
@@ -90,14 +128,20 @@ fn main() {
     serial_port.configure(&mut serial_settings).unwrap();
 
     let (tx, rx) = mpsc::channel();
-    let do_sender = || { uview_sender(rx, &mut serial_port, interval, display_mode) };
+    let start_sender = || { uview_sender(rx, &mut serial_port, interval, display_mode) };
 
     if let Some(network_matches) = matches.subcommand_matches("network") {
         let bpf = network_matches.value_of("filter").map(|f| f.to_string());
         if let Some(bandwidth_matches) = network_matches.subcommand_matches("bandwidth") {
             let max_bandwidth = bandwidth_matches.value_of("max").unwrap().parse().unwrap();
             thread::spawn(move || network_bandwidth(tx, bpf, max_bandwidth));
-            do_sender();
+            start_sender();
+        }
+    } else if let Some(memory_matches) = matches.subcommand_matches("memory") {
+        if let Some(_) = memory_matches.subcommand_matches("free") {
+            thread::spawn(move ||
+                memory_free(tx, interval, percentage || display_mode == DisplayMode::Chart));
+            start_sender();
         }
     }
 
