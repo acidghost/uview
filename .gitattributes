@@ -1,0 +1,2 @@
+src/c/*.h linguist-language=c
+src/c/*.c linguist-language=c
