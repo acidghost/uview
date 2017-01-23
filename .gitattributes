@@ -1,2 +1,2 @@
-src/c/*.h linguist-language=c
-src/c/*.c linguist-language=c
+src/c/*.h linguist-language=C
+src/c/*.c linguist-language=C
